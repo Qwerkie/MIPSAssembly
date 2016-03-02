@@ -1,0 +1,490 @@
+.data
+ColorTable:
+		.word 0x000000		#black
+		.word 0x0000ff		#blue
+		.word 0x00ff00		#green
+		.word 0xff0000		#red
+		.word 0x00ffff		#blue + green
+		.word 0xff00ff		#blue + red
+		.word 0xffff00		#green + red
+		.word 0xffffff		#white
+
+stack_beg:
+       		.word   0 : 40
+stack_end:
+	space:		.asciiz		"sssssssssssssssspppppppppppppaaaaaaaaaaace"
+	promptlabel:	.asciiz		"Enter the sequence: "
+	winlabel:	.asciiz		"\nYOU'RE THE BEST.....ARROUUUUNNDDDD"
+	loselabel:	.asciiz		"\nYOU GET NOTHING. YOU LOSE. GOOD DAY SIR"
+	sequ: 		.word 		0:20	#Sequence of numbers
+	max:		.word		0	#max number of times to go through the loop
+
+.text
+la $sp, stack_end
+li $t7, 0			#max counter
+
+##Variables WOOOOOO
+##########################
+##  $a1 points to max	##
+     la $a1, max	##
+##  $a2 points to sequ	##
+     la $a2, sequ	##
+##########################
+
+##Generate the Random Numbers
+jal rng
+
+main:
+###########################################
+##	     Clear the box		 ##
+##	Generate random numbers		 ##
+## Add to the amount of entries you need ##
+##        Display the numbers		 ##
+##       Check the user input	  	 ##
+##   Do this 5 times or until you lose	 ##
+###########################################
+
+##Increment the amount of times it will cycle
+addi $t7, $t7, 1		#increment max count
+sw $t7, ($a1)
+jal ClearDisplay		#clears the screen
+
+##Display numbers
+la $a1, max
+la $a2, sequ
+jal display
+
+
+##User check
+jal usercheck
+
+
+##do this until you have for 5 times
+la $a1, max
+lw $a0, ($a1)
+beq $a0, 5, win
+j main
+
+Exit:
+li $v0, 10
+syscall
+
+################################################
+#Procedures
+
+################################################
+#Number stuff
+
+display:
+#$a1 = number of times to go through the loop
+#$a2 = pointer to the number in memory
+	##Stack Stuff
+	addiu $sp, $sp, -20
+	sw $a1, ($sp)
+	sw $a2, 4($sp)
+	
+	##Display stuff
+	lw $t7, ($a1)
+	li $t6, 0			#Counter for loop
+	sw $ra, 8($sp)
+	displayloop:
+		sw $a2, 12($sp)			
+		##display
+			lw $a0, ($a2)
+			sw $a0, 20($sp)		
+			jal Redraw
+			lw $a0, 20($sp)	
+		blue:
+			bne $a0, 1, green
+			li $a0, 1
+			li $a1, 1
+			li $a2, 1
+			li $a3, 14
+			jal DrawBox
+			j next
+		green:
+			bne $a0, 2, red
+			li $a0, 18
+			li $a1, 1
+			li $a2, 2
+			li $a3, 13
+			jal DrawBox
+			j next
+		red:
+			bne $a0, 3, yellow
+			li $a0, 1
+			li $a1, 18
+			li $a2, 3
+			li $a3, 13
+			jal DrawBox
+			j next
+		yellow:
+			li $a0, 18
+			li $a1, 18
+			li $a2, 6
+			li $a3, 13
+			jal DrawBox
+			
+	next:			
+		##PauseandClear
+		li $a0, 2000		#setting the time to pause
+		jal pause
+		jal ClearDisplay		#clear the box
+		jal Redraw
+		##Pause again
+		li $a0, 500		#setting the time to pause
+		jal pause
+		##incrementstuff
+		addiu $t6, $t6, 1	#increment the loop counter until it gets to max
+		lw $a2, 12($sp)		#load a0 which is in a2
+		addiu $a2, $a2, 4	#increment the address by 4 to go to the next word
+			
+		blt $t6, $t7, displayloop	#loop until counter = max
+		
+
+	
+	#Stack Stuff
+	lw $ra, 8($sp)
+	lw $a1, ($sp)
+	lw $a2, 4($sp)
+	addi $sp, $sp, 20		#dealocate space in stack
+	
+jr $ra
+
+rng:
+#Generates 5 numbers and saves them to memory
+#$a0 = id of generator
+#$a1 = seed for the generator
+#$a2 = pointer for the sequence in memory
+	##Stack Stuff
+	addiu $sp, $sp, -8
+	sw $a1, ($sp)
+	sw $a2, 4($sp)
+	
+	##RNG Shtuff
+	li $t0, 0
+	get_time:
+		li $v0, 30
+		syscall
+		move $a1, $a0
+
+	li $a0, 0			#set the id of the generator to 0 
+	setseed:
+		li $v0, 40
+		syscall
+	generate:
+	#$a0 = id of generator
+	#$a1 = upper bound
+		li $v0, 42
+		li $a1, 4		#upper bound is 4
+		syscall
+		addi $a0, $a0, 1	#add one so that the range is from 1-4
+		sw $a0, ($a2)
+		addiu $a2, $a2, 4	#move the address to the next space in memory
+	addi $t0, $t0, 1
+	blt $t0, 5, generate
+	
+	lw $a1, ($sp)
+	lw $a2, 4($sp)
+	addiu $sp, $sp, 8
+jr $ra
+		
+pause:
+#$a0 = number of milliseconds to wait
+	##Stack Stuff
+	addiu $sp, $sp, -8
+	sw $a1, ($sp)
+	sw $a2, 4($sp)
+	
+	##Pausing Stuff
+	move $t0, $a0			#save timeout in t0
+	li $v0, 30			#get the system time
+	syscall
+	move $t1, $a0
+	
+	ploop:
+		syscall			#get the current system time
+		subu $t2, $a0, $t1	#t2 = current time - initial time
+		bltu $t2, $t0, ploop	#loop if time elapsed < timeout
+		
+	lw $a1, ($sp)
+	lw $a2, 4($sp)
+	addiu $sp, $sp, 8
+		
+jr $ra
+
+
+usercheck:
+#$a2 = pointer to where the sequence starts
+#$a1 = pointer to the max number of times it will loop
+
+	##Stack Stuff
+	addiu $sp, $sp, -12
+	sw $a1, ($sp)
+	sw $a2, 4($sp)
+	sw $ra, 8($sp)
+	
+	lw $t7, ($a1)		#get the number of times to loop and put in t7
+	li $t6, 0			#Counter for loop
+	
+	##display prompt
+	li $v0, 4	
+	la $a0, promptlabel
+	syscall
+	
+	checkloop:
+		lw $t0, ($a2)		#random number
+		
+		##get input
+		li $v0, 12
+		syscall
+		subi $v0, $v0, 0x30
+		
+		##compare
+		bne $v0, $t0, lose
+		
+		##Increment stuff
+		addi $a2, $a2, 4	#increment seq address value
+		addi $t6, $t6, 1	#increment loop counter
+		
+		##loop while
+		blt $t6, $t7, checkloop
+		
+	jal clearbox
+	##Stack Stuff
+	lw $a1, ($sp)
+	lw $a2, 4($sp)
+	lw $ra, 8($sp)
+	addiu $sp, $sp, 8
+
+	
+jr $ra
+	
+	
+lose:
+#displays lose
+	li $v0, 4
+	la $a0, loselabel
+	syscall
+j Exit
+
+win:
+#displays win message
+	li $v0, 4
+	la $a0, winlabel
+	syscall
+j Exit
+
+
+clearbox:
+#clears the output box
+	##Stack Stuff
+	addiu $sp, $sp, -8
+	sw $a1, ($sp)
+	sw $a2, 4($sp)
+	
+	##Clear Stuff
+	li $t0, 0
+	clearloop:
+		li $a0, '\n'
+		li $v0, 11
+		syscall
+		addi $t0, $t0, 1
+		blt $t0, 20, clearloop
+	##Stack Stuff
+	lw $a1, ($sp)
+	lw $a2, 4($sp)
+	addiu $sp, $sp, 8
+		
+jr $ra
+
+#####################################################
+#Graphics stuff
+
+Convert_Coord:
+#$a0 = X coordinate (0 - 31)
+#$a1 = Y coordinate (0 - 31)
+#Returns $v0 = memory address
+	CalcAddress:
+		mul $t0, $a0, 4		#X coord
+		mul $t1, $a1, 128	#Y coord
+		li $t2, 0x10040000
+		add $v0, $t0, $t1
+		add $v0, $v0, $t2
+jr $ra
+
+		
+LookupColor:
+#$a2 = color number (0 - 7)
+#returns $v1 = actual number to write tot he display
+	GetColor:
+		la $t1, ColorTable
+		sll $a2, $a2, 2		#index x4 is offset
+		addu $a2, $a2, $t1	#base + offset
+		lw $v1, 0($a2)		#get actual color word
+jr $ra
+	
+	
+Draw_A_Dot:
+#$a0 = x coordinate (0 - 31)
+#a1 = y coordinate (0 - 31)
+#a2 = color number (0 - 7)
+	DrawDot:
+		addiu $sp, $sp, -8	#room for two
+		sw $ra, 4($sp)
+		sw $a2, ($sp)
+		jal CalcAddress
+		lw $a2, ($sp)
+		sw $v0, ($sp)
+		jal GetColor
+		lw $v0, ($sp)
+		sw $v1, ($v0)		#make dot
+		lw $ra, 4($sp)
+		addiu $sp, $sp, 8
+jr $ra
+
+Draw_Horz_Line:
+#$a0 = x coord (0-31)
+#$a1 = y coord (0-31)
+#$a2 = color number (0-7)
+#$a3 = length of the line (1-32)
+	HorzLine:
+		addiu $sp, $sp, -20
+		sw $ra, ($sp)
+	HorzLoop:
+		#stack a
+		sw $a0, 4($sp)
+		sw $a1, 8($sp)
+		sw $a2, 12($sp)
+		sw $a3, 16($sp)
+		
+		#draw dot
+		jal DrawDot
+		
+		#Unstack a
+		lw $a0, 4($sp)
+		lw $a1, 8($sp)
+		lw $a2, 12($sp)
+		lw $a3, 16($sp)
+		
+		#increment x coord = a0
+		addiu $a0, $a0, 1
+		
+		#decriment the length and branch until 0
+		addiu $a3, $a3, -1
+		bne $a3, $0, HorzLoop
+		
+		lw $ra, ($sp)
+		addiu $sp, $sp, 20
+jr $ra
+	
+Draw_Vert_Line:
+#$a0 = x coord (0-31)
+#$a1 = y coord (0-31)
+#$a2 = color number (0-7)
+#$a3 = length of the line (1-32)
+	VertLine:
+		addiu $sp, $sp, -20
+		sw $ra, ($sp)
+	VertLoop:
+		#stack a
+		sw $a0, 4($sp)
+		sw $a1, 8($sp)
+		sw $a2, 12($sp)
+		sw $a3, 16($sp)
+		
+		#draw dot
+		jal DrawDot
+		
+		#Unstack a
+		lw $a0, 4($sp)
+		lw $a1, 8($sp)
+		lw $a2, 12($sp)
+		lw $a3, 16($sp)
+		
+		#increment x coord = a0
+		addiu $a1, $a1, 1
+		
+		#decriment the length and branch until 0
+		addiu $a3, $a3, -1
+		bne $a3, $0, VertLoop
+		
+		lw $ra, ($sp)
+		addiu $sp, $sp, 20
+jr $ra
+	
+Draw_Filled_Box:
+#$a0 = x coord (0-31)
+#$a1 = y coord (0-31)
+#$a2 = color number (0-7)
+#$a3 = size of the box (1-32)
+	DrawBox:
+		addiu $sp, $sp, -24
+		sw $ra, ($sp)
+		add $t0, $0, $a3
+	BoxLoop:
+		#stack a
+		sw $a0, 4($sp)
+		sw $a1, 8($sp)
+		sw $a2, 12($sp)
+		sw $a3, 16($sp)
+		sw $t0, 20($sp)
+		
+		jal HorzLine
+		
+		#Unstack a
+		lw $a0, 4($sp)
+		lw $a1, 8($sp)
+		lw $a2, 12($sp)
+		lw $a3, 16($sp)
+		lw $t0, 20($sp)
+		
+		addiu $a1, $a1, 1	#inc y coord
+		addiu $t0, $t0, -1	#dec counter
+		bne $t0, $0, BoxLoop
+	
+	lw $ra, ($sp)
+	addiu $sp, $sp, 24
+
+jr $ra
+
+ClearDisplay:
+#Draw a black box over whole display
+	ClearDisp:
+		addiu $sp, $sp, -4
+		sw $ra, ($sp)
+		
+		#Blank the screen
+		li $a0, 0
+		li $a1, 0
+		li $a2, 0
+		li $a3, 32
+		jal DrawBox
+				
+		lw $ra, ($sp)
+		addiu $sp, $sp, 4
+jr $ra
+
+Redraw:
+#Redraws the white guidelines
+		addiu $sp, $sp, -4
+		sw $ra, ($sp)
+		
+		#Redraw the lines
+		#Horizontal
+		li $a0, 0
+		li $a1, 16
+		li $a2, 7
+		li $a3, 32
+		jal HorzLine
+		
+		#Verticle
+		li $a0, 16
+		li $a1, 0
+		li $a2, 7
+		li $a3, 32
+		jal VertLine
+		
+		lw $ra, ($sp)
+		addiu $sp, $sp, 4
+jr $ra
